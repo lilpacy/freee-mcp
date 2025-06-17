@@ -141,10 +141,28 @@ function convertParameterToZodSchema(parameter: OpenAPIParameter): z.ZodType {
 
 // OpenAPIのパスをMCPツール名に変換する関数
 function convertPathToToolName(path: string): string {
-  return path
+  // 基本的な変換
+  const baseName = path
     .replace(/^\/api\/\d+\//, '')
     .replace(/\/{[^}]+}/g, '_by_id')
     .replace(/\//g, '_');
+
+  // 文字列をハッシュ化して10文字に収める
+  let hash = 0;
+  for (let i = 0; i < baseName.length; i++) {
+    const char = baseName.charCodeAt(i);
+    hash = (hash << 5) - hash + char;
+    hash = hash & hash; // Convert to 32bit integer
+  }
+
+  // ハッシュを16進数に変換し、最初の10文字を取得
+  return Math.abs(hash).toString(16).substring(0, 10);
+}
+
+function sanitizeParameterName(name: string): string {
+  return name
+    .replace(/[^a-zA-Z0-9_.-]/g, '_') // 許可されていない文字を_に置換
+    .substring(0, 64); // 64文字に制限
 }
 
 // OpenAPIの定義からMCPツールを生成する関数
@@ -168,7 +186,8 @@ function generateToolsFromOpenApi(server: McpServer): void {
       // パスパラメータの処理
       const pathParams = operation.parameters?.filter((p) => p.in === 'path') || [];
       pathParams.forEach((param) => {
-        parameterSchema[param.name] = convertParameterToZodSchema(param);
+        const safeName = sanitizeParameterName(param.name);
+        parameterSchema[safeName] = convertParameterToZodSchema(param);
       });
 
       // クエリパラメータの処理
@@ -178,7 +197,8 @@ function generateToolsFromOpenApi(server: McpServer): void {
         if (param.name === 'company_id') {
           schema = schema.optional(); // company_id は任意にしてリクエスト時に補完
         }
-        parameterSchema[param.name] = schema;
+        const safeName = sanitizeParameterName(param.name);
+        parameterSchema[safeName] = schema;
       });
 
       // Bodyパラメータの処理
